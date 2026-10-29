@@ -8,15 +8,21 @@ class SliceCollisionEngine:
         self.mesh = mesh
         self._cache: Dict[float, List[Tuple[np.ndarray, np.ndarray]]] = {}
 
-        # Precompute face bounds for fast slice intersection filtering
         v0 = self.mesh.vertices[self.mesh.faces[:, 0]]
         v1 = self.mesh.vertices[self.mesh.faces[:, 1]]
         v2 = self.mesh.vertices[self.mesh.faces[:, 2]]
         self._f_zmin = np.minimum(np.minimum(v0[:, 2], v1[:, 2]), v2[:, 2])
         self._f_zmax = np.maximum(np.maximum(v0[:, 2], v1[:, 2]), v2[:, 2])
 
+        self._v0 = v0
+        self._e1 = v1 - v0
+        self._e2 = v2 - v0
+        self._pvec = np.column_stack([self._e2[:, 1], -self._e2[:, 0], np.zeros(len(self._e2), dtype=np.float32)])
+        self._det = np.sum(self._e1 * self._pvec, axis=1)
+        self._valid_det = np.abs(self._det) > 1e-7
+        self._inv_det = 1.0 / np.where(self._valid_det, self._det, 1.0)
+
     def get_slice_segments(self, z: float) -> List[Tuple[np.ndarray, np.ndarray]]:
-        # Snap z to 0.1mm resolution for exact slice clearance and cache reuse
         z_key = round(float(z) * 10.0) / 10.0
         if z_key in self._cache:
             return self._cache[z_key]
@@ -45,13 +51,6 @@ class SliceCollisionEngine:
     def query(
         self, point_3d: np.ndarray, radius: float, margin: float = 1.2
     ) -> Tuple[bool, float, np.ndarray]:
-        """
-        Queries clearance between a 3D branch node and model surface.
-        Returns:
-            is_safe: True if point is outside the model and >= (radius + margin) away from walls
-            signed_dist: Positive if outside, negative if inside model geometry
-            push_vector: Direction and distance to move point into safe open air
-        """
         x, y, z = float(point_3d[0]), float(point_3d[1]), float(point_3d[2])
         segs = self.get_slice_segments(z)
         if not segs:
@@ -63,7 +62,6 @@ class SliceCollisionEngine:
         ray_count = 0
 
         for a, b in segs:
-            # Raycast along +X for point-in-polygon
             if (a[1] > y) != (b[1] > y):
                 denom = b[1] - a[1]
                 if abs(denom) > 1e-9:
@@ -71,7 +69,6 @@ class SliceCollisionEngine:
                     if x_int > x:
                         ray_count += 1
 
-            # Point to 2D line segment distance
             v = b - a
             w = p - a
             c1 = np.dot(w, v)
@@ -95,13 +92,40 @@ class SliceCollisionEngine:
         n_out = (best_diff / max(1e-6, norm)).astype(np.float32)
 
         if is_inside:
-            push = n_out * (needed + min_d)
+            # best_diff points from boundary to p (inward). Push in opposite direction.
+            exit_dir = -n_out
+            push = exit_dir * (needed + min_d)
             return False, -min_d, push
         else:
             if min_d < needed:
                 push = n_out * (needed - min_d)
                 return False, min_d, push
             return True, min_d, np.zeros(2, dtype=np.float32)
+
+    def get_floor_beneath(self, xy: np.ndarray, z_start: float) -> float:
+        """Returns height of the highest upward model surface beneath xy below z_start (0.0 if clear to bed)."""
+        tvec = np.array([xy[0], xy[1], z_start], dtype=np.float32) - self._v0
+        u = np.sum(tvec * self._pvec, axis=1) * self._inv_det
+        mask = self._valid_det & (u >= -1e-4) & (u <= 1.0001)
+        if not np.any(mask):
+            return 0.0
+
+        qvec = np.cross(tvec[mask], self._e1[mask])
+        v = -qvec[:, 2] * self._inv_det[mask]
+        mask2 = (v >= -1e-4) & (u[mask] + v <= 1.0001)
+        if not np.any(mask2):
+            return 0.0
+
+        valid_indices = np.where(mask)[0][mask2]
+        t = np.sum(self._e2[valid_indices] * qvec[mask2], axis=1) * self._inv_det[valid_indices]
+        hits_z = z_start - t
+        normals = self.mesh.face_normals
+        up_hits = [
+            float(hz)
+            for hz, fi in zip(hits_z, valid_indices)
+            if 0.5 <= hz < (z_start - 0.2) and normals[fi, 2] > 0.3
+        ]
+        return max(up_hits) if up_hits else 0.0
 
     def get_bed_clearance(self, xy_pos: np.ndarray) -> float:
         """Returns distance from 2D point to nearest model footprint edge at bed level (Z=0)."""

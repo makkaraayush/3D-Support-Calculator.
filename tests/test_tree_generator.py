@@ -112,6 +112,25 @@ class TestTreeGenerator(unittest.TestCase):
         support_mesh = builder.build_mesh(graph, collision_engine=router.collision)
         self.assertGreaterEqual(float(support_mesh.bounds[0][2]), 0.0)
 
+    def test_floor_beneath_detection(self):
+        from src.geometry.collision_engine import SliceCollisionEngine
+        engine = SliceCollisionEngine(self.mesh)
+        # Point above cap top at X=0, Y=0, Z=35 (top cap is at Z=30)
+        floor_z = engine.get_floor_beneath(np.array([0.0, 0.0]), 35.0)
+        self.assertGreaterEqual(floor_z, 29.9)
+
+        # Point in open air outside mesh bounds at X=50, Y=0, Z=25
+        floor_open = engine.get_floor_beneath(np.array([50.0, 0.0]), 25.0)
+        self.assertEqual(floor_open, 0.0)
+
+    def test_zero_tree_node_collisions(self):
+        router = BranchRouter(self.mesh, "PLA", 0.20)
+        graph = router.build_tree_graph(self.contact_points)
+        for node in graph.nodes.values():
+            if node.node_type in ("branch", "trunk", "root"):
+                safe, dist, _ = router.collision.query(node.position, radius=node.radius, margin=0.1)
+                self.assertGreaterEqual(dist, -0.15)
+
 
 if __name__ == "__main__":
     unittest.main()

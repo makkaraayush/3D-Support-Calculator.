@@ -41,13 +41,21 @@ class SupportMeshBuilder:
                     current_v_offset += len(verts)
 
             # Build bed adhesion disc with collision clearance from model base
-            if (node.is_bed_contact or node.node_type == "root") and node.position[2] <= 0.2:
+            if (node.is_bed_contact or (node.node_type == "root" and node.position[2] <= 0.4)) and node.position[2] <= 0.4:
                 flange_r = max(2.4, node.radius * 1.5)
                 if collision_engine is not None:
                     bed_dist = collision_engine.get_bed_clearance(node.position)
                     if bed_dist < 900.0:
                         flange_r = min(flange_r, max(node.radius + 0.1, bed_dist - 0.4))
                 verts, faces = self._create_bed_disc(node.position, radius=flange_r, height=0.4)
+                if len(verts) > 0:
+                    all_vertices.append(verts)
+                    all_faces.append(faces + current_v_offset)
+                    current_v_offset += len(verts)
+
+            # Cap bottom interface root nodes resting on model surfaces (Z > 0.4)
+            if node.node_type == "root" and node.position[2] > 0.4:
+                verts, faces = self._create_tip_cap(node.position, radius=node.radius)
                 if len(verts) > 0:
                     all_vertices.append(verts)
                     all_faces.append(faces + current_v_offset)

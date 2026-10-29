@@ -10,6 +10,7 @@ import json
 import io
 import asyncio
 from typing import Dict, Any, Optional
+import numpy as np
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles

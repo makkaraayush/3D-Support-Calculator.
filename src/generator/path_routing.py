@@ -32,33 +32,34 @@ class BranchRouter:
     def _partition_tips_into_families(
         self, contact_points: List[ContactPoint], max_cluster_radius: float = 9.0
     ) -> List[List[ContactPoint]]:
-        """Groups contact points into spatial tree clusters so branches do not cross."""
+        """Groups contact points into spatial 3D clusters so branches do not cross across tiers."""
         if not contact_points:
             return []
         if len(contact_points) <= 3:
             return [contact_points]
 
-        pts_xy = np.array([cp.position[:2] for cp in contact_points], dtype=np.float32)
-        centroids = [pts_xy[0]]
+        pts_3d = np.array([cp.position for cp in contact_points], dtype=np.float32)
+        scale = np.array([1.0, 1.0, 3.0], dtype=np.float32)
+        pts_scaled = pts_3d * scale
+        centroids = [pts_scaled[0]]
 
-        # Seed initial centroids spaced apart
-        for _ in range(1, 12):
-            dists = np.array([min(np.linalg.norm(p - c) for c in centroids) for p in pts_xy])
+        for _ in range(1, 24):
+            dists = np.array([min(np.linalg.norm(p - c) for c in centroids) for p in pts_scaled])
             if np.max(dists) < max_cluster_radius:
                 break
-            centroids.append(pts_xy[np.argmax(dists)])
+            centroids.append(pts_scaled[np.argmax(dists)])
 
         centroids_arr = np.array(centroids, dtype=np.float32)
         families: List[List[ContactPoint]] = [[] for _ in centroids]
 
-        for i, p in enumerate(pts_xy):
+        for i, p in enumerate(pts_scaled):
             c_idx = int(np.argmin([np.linalg.norm(p - c) for c in centroids_arr]))
             families[c_idx].append(contact_points[i])
 
         return [f for f in families if len(f) > 0]
 
     def build_tree_graph(self, contact_points: List[ContactPoint]) -> TreeSupportGraph:
-        """Constructs non-colliding organic tree support graph."""
+        """Constructs non-colliding organic tree support graph with exact floor and bed clearance."""
         graph = TreeSupportGraph()
         if not contact_points:
             return graph
@@ -73,25 +74,35 @@ class BranchRouter:
         max_xy_step = float(step_z * np.tan(np.radians(self.branch_angle_deg)))
 
         for fam in families:
-            # Safe trunk target axis for this family
+            # Check for horizontal model floor beneath this family
+            floor_z = max(self.collision.get_floor_beneath(cp.position[:2], cp.position[2]) for cp in fam)
+            is_floor_supp = floor_z > 0.8
+            z_target = (floor_z + self.z_gap_mm) if is_floor_supp else 0.0
+
             raw_centroid = np.mean([cp.position[:2] for cp in fam], axis=0)
             trunk_axis = raw_centroid.copy().astype(np.float32)
+            min_tip_z = min(cp.position[2] for cp in fam)
 
-            # Check that trunk axis maintains wall clearance down to the bed
-            for test_z in [0.0, 5.0, 15.0]:
-                safe, _, push = self.collision.query(
-                    np.array([trunk_axis[0], trunk_axis[1], test_z]),
-                    radius=2.2,
-                    margin=self.model_clearance_mm,
-                )
-                if not safe:
-                    trunk_axis += push
+            # Check trunk clearance down to z_target
+            z_tests = np.linspace(z_target, min_tip_z, max(3, int((min_tip_z - z_target) / 10.0)))
+            for _ in range(10):
+                all_safe = True
+                for tz in z_tests:
+                    safe, _, push = self.collision.query(
+                        np.array([trunk_axis[0], trunk_axis[1], tz]),
+                        radius=2.2,
+                        margin=self.model_clearance_mm,
+                    )
+                    if not safe:
+                        trunk_axis += push
+                        all_safe = False
+                if all_safe:
+                    break
 
-            # Initialize tip nodes offset by vertical air gap
             active_heads: List[TreeNode] = []
             for cp in fam:
                 pos = cp.position.copy()
-                pos[2] = max(0.2, pos[2] - self.z_gap_mm)
+                pos[2] = max(z_target + 0.2, pos[2] - self.z_gap_mm)
                 tip_radius = self.tip_diameter_mm * 0.5
                 node = graph.add_node(
                     position=pos,
@@ -100,45 +111,40 @@ class BranchRouter:
                 )
                 active_heads.append(node)
 
-            # Descend layer by layer towards bed
             while active_heads:
                 avg_z = float(np.mean([h.position[2] for h in active_heads]))
-                new_z = max(0.0, avg_z - step_z)
-                is_bed = new_z <= 0.4
+                if avg_z <= (z_target + 0.4):
+                    break
+                new_z = max(z_target, avg_z - step_z)
+                is_bottom = new_z <= (z_target + 0.4)
 
-                # Check convergence towards trunk axis
                 dists_to_axis = [float(np.linalg.norm(h.position[:2] - trunk_axis)) for h in active_heads]
                 max_d = max(dists_to_axis) if dists_to_axis else 0.0
 
-                if len(active_heads) == 1 or max_d <= 2.0 or is_bed:
-                    # Merge branches into unified trunk
+                if len(active_heads) == 1 or max_d <= 2.0 or is_bottom:
                     trunk_r = min(3.8, 0.35 * np.sqrt(len(fam)) + 1.2)
-                    if is_bed:
+                    if is_bottom and z_target == 0.0:
                         trunk_r = max(2.6, trunk_r * 1.3)
 
-                    pos = np.array([trunk_axis[0], trunk_axis[1], 0.0 if is_bed else new_z], dtype=np.float32)
+                    pos = np.array([trunk_axis[0], trunk_axis[1], z_target if is_bottom else new_z], dtype=np.float32)
                     safe, _, push = self.collision.query(pos, radius=trunk_r, margin=self.model_clearance_mm)
                     if not safe:
                         pos[:2] += push
                         trunk_axis = pos[:2].copy()
 
-                    node_type = "root" if is_bed else "trunk"
+                    node_type = "root" if is_bottom else "trunk"
                     new_node = graph.add_node(
                         position=pos,
                         radius=trunk_r,
                         node_type=node_type,
-                        is_bed_contact=is_bed,
+                        is_bed_contact=(is_bottom and z_target == 0.0),
                     )
                     for h in active_heads:
                         h.parent_id = new_node.id
                         new_node.children_ids.append(h.id)
 
-                    if not is_bed:
-                        active_heads = [new_node]
-                    else:
-                        active_heads = []
+                    active_heads = [] if is_bottom else [new_node]
                 else:
-                    # Steer branches inward towards trunk axis
                     next_heads: List[TreeNode] = []
                     for h in active_heads:
                         d_vec = trunk_axis - h.position[:2]
