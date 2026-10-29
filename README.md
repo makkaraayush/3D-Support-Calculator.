@@ -70,8 +70,7 @@ I also made sure this runs smoothly on low-end hardware. My own daily workstatio
 │       ├── viewer.js            # Three.js 3D viewport with OrbitControls and heatmaps
 │       └── app.js               # Frontend controller, slider bindings, and SSE client
 ├── tests/                       # Complete automated unit test suite
-├── data/
-│   └── benchmark_models/        # Overhang torture, arch bridge, and hole test STL files
+├── data/                        # Generated locally during training and benchmarks (git-ignored)
 ├── run.py                       # Launcher for web dashboard or headless CLI
 └── requirements.txt             # Lightweight dependencies
 ```

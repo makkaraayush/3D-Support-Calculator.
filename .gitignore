@@ -33,6 +33,10 @@ env/
 *.swp
 *.swo
 
-# Project temp
+# Project temp and local data
 temp_uploads/
 *.tmp
+data/
+*.npz
+*.npy
+knowledge_bank.json
