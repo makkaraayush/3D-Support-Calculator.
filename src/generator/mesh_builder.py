@@ -74,15 +74,21 @@ class SupportMeshBuilder:
 
         z_axis = axis / length
 
-        # Find orthogonal vectors
-        if abs(z_axis[0]) < 0.9 and abs(z_axis[1]) < 0.9:
-            arbitrary = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-        else:
+        # Find orthogonal vectors: if z_axis is close to Z axis, choose X as arbitrary
+        if abs(z_axis[2]) > 0.85:
             arbitrary = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        else:
+            arbitrary = np.array([0.0, 0.0, 1.0], dtype=np.float32)
 
         x_axis = np.cross(arbitrary, z_axis)
-        x_axis = x_axis / max(1e-6, np.linalg.norm(x_axis))
+        x_norm = np.linalg.norm(x_axis)
+        if x_norm < 1e-6:
+            arbitrary = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+            x_axis = np.cross(arbitrary, z_axis)
+            x_norm = np.linalg.norm(x_axis)
+        x_axis = x_axis / x_norm
         y_axis = np.cross(z_axis, x_axis)
+        y_axis = y_axis / max(1e-6, np.linalg.norm(y_axis))
 
         thetas = np.linspace(0, 2 * np.pi, self.radial_segments, endpoint=False)
         cos_t = np.cos(thetas)
@@ -102,6 +108,7 @@ class SupportMeshBuilder:
         )
 
         verts = np.vstack([top_circle, bottom_circle]).astype(np.float32)
+        verts[:, 2] = np.maximum(0.0, verts[:, 2])
         faces: List[List[int]] = []
         n = self.radial_segments
 
@@ -147,20 +154,20 @@ class SupportMeshBuilder:
         return verts, np.array(faces, dtype=np.int32)
 
     def _create_tip_cap(self, tip_pos: np.ndarray, radius: float) -> Tuple[np.ndarray, np.ndarray]:
-        """Creates a smooth dome cap at the tip position."""
+        """Creates a conical contact tip pointed upward toward the overhang interface."""
         thetas = np.linspace(0, 2 * np.pi, self.radial_segments, endpoint=False)
         x = radius * np.cos(thetas)
         y = radius * np.sin(thetas)
 
-        center_v = tip_pos.copy()
+        apex = np.array([tip_pos[0], tip_pos[1], tip_pos[2] + 0.3], dtype=np.float32)
         ring_verts = np.column_stack([tip_pos[0] + x, tip_pos[1] + y, np.full_like(x, tip_pos[2])])
 
-        verts = np.vstack([center_v, ring_verts]).astype(np.float32)
+        verts = np.vstack([apex, ring_verts]).astype(np.float32)
         faces: List[List[int]] = []
         n = self.radial_segments
 
         for i in range(n):
             next_i = (i + 1) % n
-            faces.append([0, 1 + next_i, 1 + i])
+            faces.append([0, 1 + i, 1 + next_i])
 
         return verts, np.array(faces, dtype=np.int32)

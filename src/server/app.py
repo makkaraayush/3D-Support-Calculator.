@@ -252,8 +252,8 @@ def generate_support(
 
     router = BranchRouter(
         mesh=current_mesh,
-        material=material,
-        layer_height=layer_height,
+        material=mat,
+        layer_height=l_height,
         branch_angle_deg=branch_angle_deg,
         merge_distance_mm=merge_distance_mm,
         tip_diameter_mm=tip_diameter_mm,
@@ -266,8 +266,8 @@ def generate_support(
     current_support_mesh = builder.build_mesh(graph)
 
     # Evaluate physics
-    evaluator = SupportPhysicsEvaluator(current_mesh, material=material, layer_height=layer_height)
-    report = evaluator.evaluate(graph, contact_points, priority_profile=priority)
+    evaluator = SupportPhysicsEvaluator(current_mesh, material=mat, layer_height=l_height)
+    report = evaluator.evaluate(graph, contact_points, priority_profile=prio)
 
     return {
         "status": "generated",
