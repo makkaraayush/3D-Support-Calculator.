@@ -2,6 +2,8 @@
 
 A physical simulation engine and continuous self-learning neural surrogate optimizer that calculates high-efficiency, easily detachable tree support structures for FDM 3D printers, specifically calibrated for the Bambu Lab A1.
 
+![3D Support Calculator Dashboard](docs/images/dashboard_overview.png)
+
 ---
 
 ## Why I Built This
@@ -31,6 +33,25 @@ I also made sure this runs smoothly on low-end hardware. My own daily workstatio
 - Hole & Internal Bore Intelligence: Classifies horizontal holes into micro-arches (which self-support without plastic), medium bores (sacrificial bridge roofs), and large cylinders (single-point cantilever plugs that pull out cleanly in one piece).
 - Full 3MF & Bambu Studio Integration: Upload raw STL, OBJ, or full sliced `.3mf` Bambu Studio projects. The engine extracts plate geometries and slicing configs, optimizes the supports, and exports ready-to-print `.3mf` packages or combined `.stl` files.
 - Full-Stack Interactive Web Dashboard: Includes a real-time Three.js 3D viewport with Bambu A1 bed dimensions, overhang angle heatmaps, live background training metrics, and comparison tables.
+
+---
+
+## Visual Overview & Interface
+
+### 1. Interactive 3D Viewport & Overhang Heatmap
+The 3D environment models the Bambu Lab A1 256 x 256 mm build plate. Faces are color-coded in real-time according to overhang severity (silver for printable perimeters, amber for steep overhangs, and crimson red for critical droop zones requiring support).
+
+![3D Viewport and Model Analysis](docs/images/dashboard_overview.png)
+
+### 2. High-Efficiency Tree Support Generation
+Generated tree branches converge as they descend toward the build bed, reducing plastic consumption by 40% to 70% compared to standard slicer grid columns while anchoring firmly to the plate.
+
+![Generated Tree Support Mesh](docs/images/support_generation.png)
+
+### 3. Continuous Self-Learning AI Search
+When activated, the continuous background optimizer tests candidate support parameters across hundreds of generations, training the neural surrogate model on live physical evaluations to discover optimal support geometries.
+
+![Continuous AI Engine Running](docs/images/ai_self_learning.png)
 
 ---
 
