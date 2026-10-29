@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Support Calculator | AI Physics Optimizer for Bambu Lab A1</title>
+  <meta name="description" content="Physics simulation and continuous self-learning AI optimizer for 3D printing tree supports. Saves filament and enables effortless breakaway removal.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <!-- Three.js and OrbitControls from CDN with fallback -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-badge">Bambu A1</div>
+        <div class="brand-titles">
+          <h1>3D Support Calculator</h1>
+          <span class="subtitle">Self-Learning Physics Engine for FDM Printing</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="engine-badge" id="engineStatusBadge">
+          <span class="status-dot"></span>
+          <span id="engineStatusText">AI Engine: Idle</span>
+        </div>
+        <div class="export-dropdown">
+          <button class="btn btn-secondary" id="exportStlBtn">Export STL</button>
+          <button class="btn btn-primary" id="export3mfBtn">Export Bambu 3MF</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workspace Container -->
+    <div class="workspace-grid">
+      <!-- Left Sidebar: Controls, Model Upload, Slicer Parameters -->
+      <aside class="sidebar-panel">
+        <!-- Model Selector & Uploader -->
+        <section class="card">
+          <div class="card-header">
+            <h3>3D Model</h3>
+          </div>
+          <div class="upload-dropzone" id="dropZone">
+            <input type="file" id="fileInput" accept=".stl,.obj,.3mf" class="hidden-input">
+            <div class="dropzone-content">
+              <svg class="icon-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <p>Drag & drop <strong>.STL, .OBJ, or .3MF</strong> here</p>
+              <button class="btn btn-sm btn-outline" id="browseFileBtn">Browse Files</button>
+            </div>
+          </div>
+
+          <div class="benchmark-selector">
+            <label for="benchmarkSelect">Or Load Benchmark Model:</label>
+            <select id="benchmarkSelect" class="form-select">
+              <option value="">Select benchmark model...</option>
+            </select>
+          </div>
+
+          <!-- Model Geometry Specs -->
+          <div class="spec-grid" id="modelSpecs">
+            <div class="spec-item">
+              <span class="spec-label">Model</span>
+              <span class="spec-val" id="specModelName">None</span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-label">Triangles</span>
+              <span class="spec-val" id="specTriangles">-</span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-label">Dimensions</span>
+              <span class="spec-val" id="specDimensions">-</span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-label">Critical Overhang</span>
+              <span class="spec-val text-warning" id="specOverhangPct">-</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slicing & Material Physics Config -->
+        <section class="card">
+          <div class="card-header">
+            <h3>Printing Setup (Bambu A1)</h3>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="materialSelect">Filament Material</label>
+              <select id="materialSelect" class="form-select">
+                <option value="PLA">Bambu PLA Basic</option>
+                <option value="PETG">Bambu PETG Basic</option>
+                <option value="ABS">Bambu ABS</option>
+                <option value="TPU">Bambu TPU 95A</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="layerHeightSelect">Layer Height</label>
+              <select id="layerHeightSelect" class="form-select">
+                <option value="0.12">0.12 mm (Fine)</option>
+                <option value="0.16">0.16 mm (Optimal)</option>
+                <option value="0.20" selected>0.20 mm (Standard)</option>
+                <option value="0.28">0.28 mm (Draft)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="prioritySelect">Optimization Priority</label>
+            <select id="prioritySelect" class="form-select">
+              <option value="balanced">Balanced (Optimal Speed & Quality)</option>
+              <option value="filament_saver">Maximum Filament Savings</option>
+              <option value="clean_removal">Pristine Finish / Easy Removal</option>
+              <option value="max_stability">Maximum Stability for Tall Prints</option>
+            </select>
+          </div>
+
+          <!-- Precomputed Physics Guidance -->
+          <div class="physics-callout">
+            <div class="callout-title">Calibrated Physics Matrix</div>
+            <div class="callout-body">
+              <span>Optimal Air Gap: <strong id="lblAirGap">0.22 mm</strong></span>
+              <span>Safe Overhang: <strong id="lblSafeAngle">58°</strong></span>
+              <span>Max Clean Bridge: <strong id="lblMaxBridge">32 mm</strong></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Support Parameters (Interactive Sliders) -->
+        <section class="card">
+          <div class="card-header">
+            <h3>Support Parameters</h3>
+            <button class="btn btn-sm btn-outline" id="resetParamsBtn">Reset</button>
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>Branch Angle</span>
+              <span class="slider-val" id="valBranchAngle">28°</span>
+            </div>
+            <input type="range" id="sliderBranchAngle" min="16" max="38" step="1" value="28" class="form-slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>Branch Merge Distance</span>
+              <span class="slider-val" id="valMergeDist">9.0 mm</span>
+            </div>
+            <input type="range" id="sliderMergeDist" min="4" max="16" step="0.5" value="9.0" class="form-slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>Contact Tip Diameter</span>
+              <span class="slider-val" id="valTipDia">0.70 mm</span>
+            </div>
+            <input type="range" id="sliderTipDia" min="0.5" max="1.1" step="0.05" value="0.70" class="form-slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>Contact Grid Density</span>
+              <span class="slider-val" id="valGridRes">3.4 mm</span>
+            </div>
+            <input type="range" id="sliderGridRes" min="2.0" max="5.5" step="0.2" value="3.4" class="form-slider">
+          </div>
+
+          <button class="btn btn-accent btn-block" id="generateSupportBtn">Generate Support Mesh</button>
+        </section>
+      </aside>
+
+      <!-- Center 3D Viewport Area -->
+      <main class="viewport-container">
+        <div id="threeViewport" class="three-viewport"></div>
+
+        <!-- Viewport Floating Overlays & Controls -->
+        <div class="viewport-toolbar">
+          <button class="tool-btn active" id="btnToggleModel" title="Toggle Model Mesh">Model</button>
+          <button class="tool-btn active" id="btnToggleHeatmap" title="Toggle Overhang Heatmap">Overhangs</button>
+          <button class="tool-btn active" id="btnToggleSupport" title="Toggle Support Structures">Supports</button>
+          <button class="tool-btn active" id="btnToggleBed" title="Toggle Bambu A1 Bed">Bed</button>
+          <button class="tool-btn" id="btnResetCamera" title="Reset View">Reset View</button>
+        </div>
+
+        <div class="viewport-legend">
+          <div class="legend-item"><span class="legend-swatch swatch-model"></span> Printable Geometry</div>
+          <div class="legend-item"><span class="legend-swatch swatch-overhang"></span> Critical Overhang (&gt;58°)</div>
+          <div class="legend-item"><span class="legend-swatch swatch-support"></span> AI Tree Support</div>
+        </div>
+      </main>
+
+      <!-- Right Sidebar: Live Continuous AI Optimizer & Physics Metrics -->
+      <aside class="sidebar-panel">
+        <!-- Self-Learning Continuous AI Optimizer -->
+        <section class="card card-highlight">
+          <div class="card-header">
+            <div class="header-with-badge">
+              <h3>Continuous AI Engine</h3>
+              <span class="pulse-indicator" id="aiPulseIndicator"></span>
+            </div>
+          </div>
+          <p class="section-desc">
+            Runs continuously in the background on your CPU/GPU, simulating thousands of topological variations to discover the best support.
+          </p>
+
+          <div class="engine-controls">
+            <button class="btn btn-success btn-block" id="btnStartEngine">Start Self-Learning Search</button>
+            <button class="btn btn-secondary btn-block hidden" id="btnStopEngine">Pause Search</button>
+          </div>
+
+          <div class="learning-metrics-grid">
+            <div class="metric-box">
+              <span class="metric-title">Generations</span>
+              <span class="metric-value font-mono" id="lblGenCount">0</span>
+            </div>
+            <div class="metric-box">
+              <span class="metric-title">Surrogate Loss</span>
+              <span class="metric-value font-mono text-cyan" id="lblSurrogateLoss">0.0000</span>
+            </div>
+            <div class="metric-box">
+              <span class="metric-title">Best Fitness</span>
+              <span class="metric-value font-mono text-emerald" id="lblBestFitness">0.0</span>
+            </div>
+            <div class="metric-box">
+              <span class="metric-title">Filament Saved</span>
+              <span class="metric-value font-mono text-gold" id="lblFilamentSaved">0.0%</span>
+            </div>
+          </div>
+
+          <div class="status-ticker">
+            <span class="ticker-label">Activity:</span>
+            <span class="ticker-msg" id="lblActivityTicker">Ready to explore possibilities</span>
+          </div>
+        </section>
+
+        <!-- Comparison Benchmark Card -->
+        <section class="card">
+          <div class="card-header">
+            <h3>Slicer Benchmark Comparison</h3>
+          </div>
+          <div class="benchmark-table">
+            <div class="table-row table-head">
+              <span>Strategy</span>
+              <span>Filament</span>
+              <span>Removal</span>
+              <span>Time</span>
+            </div>
+            <div class="table-row">
+              <span class="strat-name">Default Grid</span>
+              <span id="cmpGridFilament">42.5 g</span>
+              <span class="badge-destructive">Destructive</span>
+              <span id="cmpGridTime">1h 35m</span>
+            </div>
+            <div class="table-row">
+              <span class="strat-name">Standard Tree</span>
+              <span id="cmpTreeFilament">26.1 g</span>
+              <span class="badge-moderate">Moderate</span>
+              <span id="cmpTreeTime">1h 10m</span>
+            </div>
+            <div class="table-row row-winner">
+              <span class="strat-name text-emerald"><strong>AI Calculated</strong></span>
+              <span class="text-emerald" id="cmpAIFilament"><strong>15.2 g</strong></span>
+              <span class="badge-effortless">1-Snap</span>
+              <span class="text-emerald" id="cmpAITime"><strong>48m</strong></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Physics Report Details -->
+        <section class="card">
+          <div class="card-header">
+            <h3>Physical Integrity & Ease of Removal</h3>
+          </div>
+          <div class="gauge-list">
+            <div class="gauge-row">
+              <div class="gauge-info">
+                <span>Overhang Coverage</span>
+                <strong id="repCoverage">100.0%</strong>
+              </div>
+              <div class="progress-bar"><div class="progress-fill fill-emerald" id="barCoverage" style="width: 100%;"></div></div>
+            </div>
+
+            <div class="gauge-row">
+              <div class="gauge-info">
+                <span>Removal Ease Rating</span>
+                <strong id="repRemovalEase">9.4 / 10</strong>
+              </div>
+              <div class="progress-bar"><div class="progress-fill fill-cyan" id="barRemovalEase" style="width: 94%;"></div></div>
+            </div>
+
+            <div class="gauge-row">
+              <div class="gauge-info">
+                <span>Euler Buckling Safety Factor</span>
+                <strong id="repBuckling">8.2x</strong>
+              </div>
+              <div class="progress-bar"><div class="progress-fill fill-gold" id="barBuckling" style="width: 82%;"></div></div>
+            </div>
+
+            <div class="gauge-row">
+              <div class="gauge-info">
+                <span>Bed Adhesion Safety</span>
+                <strong id="repBedAdhesion">14.5x</strong>
+              </div>
+              <div class="progress-bar"><div class="progress-fill fill-emerald" id="barBedAdhesion" style="width: 95%;"></div></div>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <script src="viewer.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
