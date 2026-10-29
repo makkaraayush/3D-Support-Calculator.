@@ -36,25 +36,6 @@ I also made sure this runs smoothly on low-end hardware. My own daily workstatio
 
 ---
 
-## Visual Overview & Interface
-
-### 1. Interactive 3D Viewport & Overhang Heatmap
-The 3D environment models the Bambu Lab A1 256 x 256 mm build plate. Faces are color-coded in real-time according to overhang severity (silver for printable perimeters, amber for steep overhangs, and crimson red for critical droop zones requiring support).
-
-![3D Viewport and Model Analysis](docs/images/dashboard_overview.png)
-
-### 2. High-Efficiency Tree Support Generation
-Generated tree branches converge as they descend toward the build bed, reducing plastic consumption by 40% to 70% compared to standard slicer grid columns while anchoring firmly to the plate.
-
-![Generated Tree Support Mesh](docs/images/support_generation.png)
-
-### 3. Continuous Self-Learning AI Search
-When activated, the continuous background optimizer tests candidate support parameters across hundreds of generations, training the neural surrogate model on live physical evaluations to discover optimal support geometries.
-
-![Continuous AI Engine Running](docs/images/ai_self_learning.png)
-
----
-
 ## System Architecture
 
 ```
