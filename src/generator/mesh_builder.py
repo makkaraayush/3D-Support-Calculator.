@@ -4,7 +4,7 @@ Constructs lightweight, manifold frustum segments, contact tip interfaces, and b
 ready for Three.js 3D web preview and STL / Bambu 3MF file export.
 """
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Any
 import numpy as np
 from ..geometry.mesh import TriangleMesh
 from .tree_graph import TreeSupportGraph, TreeNode
@@ -14,7 +14,9 @@ class SupportMeshBuilder:
     def __init__(self, radial_segments: int = 10):
         self.radial_segments = max(6, radial_segments)
 
-    def build_mesh(self, graph: TreeSupportGraph) -> TriangleMesh:
+    def build_mesh(
+        self, graph: TreeSupportGraph, collision_engine: Optional[Any] = None
+    ) -> TriangleMesh:
         """Constructs a combined 3D TriangleMesh from all branches and tips in the graph."""
         if not graph.nodes:
             return TriangleMesh(np.empty((0, 3), dtype=np.float32), np.empty((0, 3), dtype=np.int32))
@@ -38,9 +40,13 @@ class SupportMeshBuilder:
                     all_faces.append(faces + current_v_offset)
                     current_v_offset += len(verts)
 
-            # Build bed adhesion disc ONLY if touching bed Z=0
+            # Build bed adhesion disc with collision clearance from model base
             if (node.is_bed_contact or node.node_type == "root") and node.position[2] <= 0.2:
-                flange_r = max(2.8, node.radius * 2.0)
+                flange_r = max(2.4, node.radius * 1.5)
+                if collision_engine is not None:
+                    bed_dist = collision_engine.get_bed_clearance(node.position)
+                    if bed_dist < 900.0:
+                        flange_r = min(flange_r, max(node.radius + 0.1, bed_dist - 0.4))
                 verts, faces = self._create_bed_disc(node.position, radius=flange_r, height=0.4)
                 if len(verts) > 0:
                     all_vertices.append(verts)

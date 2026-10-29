@@ -1,8 +1,6 @@
 """
-High-performance 3D Triangle Mesh data structure implemented in pure NumPy.
-Provides vectorized face normal computation, bounding box, surface area,
-volume calculation via divergence theorem, and normal orientation verification.
-Zero heavy external C++ dependencies: runs instantly on low-end CPUs (e.g. i5-2400s).
+Vectorized 3D Triangle Mesh data structure implemented in NumPy.
+Computes face normals, bounds, surface area, and divergence volume.
 """
 
 from typing import Tuple, Optional

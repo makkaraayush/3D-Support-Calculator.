@@ -1,8 +1,6 @@
 """
-Multi-Objective Evolutionary Search & Genetic Parameter Optimizer.
-Explores the continuous search space of tree support topologies, branch merge radii,
-interface air gaps, and tip contact geometries.
-Guided by the Neural Surrogate Model to accelerate convergence on low-power hardware.
+Evolutionary parameter optimizer for tree support topologies, branch angles,
+merge distances, and interface geometries.
 """
 
 from dataclasses import dataclass, asdict

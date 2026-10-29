@@ -28,6 +28,11 @@ def create_t_shape_mesh() -> TriangleMesh:
     faces = np.array([
         # Stem base
         [0, 2, 1], [0, 3, 2],
+        # Stem vertical walls (Z=0..20)
+        [0, 1, 5], [0, 5, 4],
+        [1, 2, 6], [1, 6, 5],
+        [2, 3, 7], [2, 7, 6],
+        [3, 0, 4], [3, 4, 7],
         # Overhang wings under surface (Z=20, facing down)
         [8, 9, 4], [9, 7, 4],
         [5, 6, 10], [6, 11, 10],
@@ -83,6 +88,29 @@ class TestTreeGenerator(unittest.TestCase):
         self.assertGreater(report.filament_saved_vs_standard_grid_pct, 0.0)
         self.assertGreater(report.removal_ease_score, 5.0)
         self.assertGreater(report.composite_fitness_score, 40.0)
+        self.assertGreater(report.print_time_minutes, 1.0)
+        self.assertGreater(report.grid_print_time_minutes, report.print_time_minutes)
+
+    def test_slice_collision_clearance(self):
+        from src.geometry.collision_engine import SliceCollisionEngine
+        engine = SliceCollisionEngine(self.mesh)
+        # Point inside stem (X=0, Y=0, Z=10)
+        safe, dist, push = engine.query(np.array([0.0, 0.0, 10.0]), radius=1.0)
+        self.assertFalse(safe)
+        self.assertLess(dist, 0.0)
+        self.assertGreater(np.linalg.norm(push), 0.0)
+
+        # Point well outside in air (X=20, Y=0, Z=10)
+        safe, dist, push = engine.query(np.array([20.0, 0.0, 10.0]), radius=1.0)
+        self.assertTrue(safe)
+        self.assertGreater(dist, 1.0)
+
+    def test_bed_flange_clamped(self):
+        router = BranchRouter(self.mesh, "PLA", 0.20)
+        graph = router.build_tree_graph(self.contact_points)
+        builder = SupportMeshBuilder(radial_segments=8)
+        support_mesh = builder.build_mesh(graph, collision_engine=router.collision)
+        self.assertGreaterEqual(float(support_mesh.bounds[0][2]), 0.0)
 
 
 if __name__ == "__main__":

@@ -261,9 +261,9 @@ def generate_support(
     graph = router.build_tree_graph(contact_points)
     current_support_graph = graph
 
-    # Build solid 3D mesh
+    # Build solid 3D mesh with bed collision clearance
     builder = SupportMeshBuilder(radial_segments=8)
-    current_support_mesh = builder.build_mesh(graph)
+    current_support_mesh = builder.build_mesh(graph, collision_engine=router.collision)
 
     # Evaluate physics
     evaluator = SupportPhysicsEvaluator(current_mesh, material=mat, layer_height=l_height)
@@ -279,6 +279,8 @@ def generate_support(
             "coverage_score_pct": round(report.coverage_score_pct, 1),
             "support_volume_cm3": round(report.support_volume_cm3, 3),
             "support_mass_grams": round(report.support_mass_grams, 2),
+            "grid_mass_grams": round(report.grid_mass_grams, 1),
+            "tree_mass_grams": round(report.tree_mass_grams, 1),
             "filament_saved_vs_grid_pct": round(report.filament_saved_vs_standard_grid_pct, 1),
             "filament_saved_vs_tree_pct": round(report.filament_saved_vs_default_tree_pct, 1),
             "average_breakaway_force_n": round(report.average_breakaway_force_n, 2),
@@ -286,7 +288,10 @@ def generate_support(
             "surface_scarring_risk": report.surface_scarring_risk,
             "min_buckling_safety_factor": round(report.min_buckling_safety_factor, 1),
             "bed_adhesion_safety_factor": round(report.bed_adhesion_safety_factor, 1),
-            "print_time_minutes": round(report.estimated_support_print_time_minutes, 1),
+            "print_time_minutes": round(report.print_time_minutes, 1),
+            "grid_print_time_minutes": round(report.grid_print_time_minutes, 1),
+            "standard_tree_print_time_minutes": round(report.standard_tree_print_time_minutes, 1),
+            "time_saved_minutes": round(report.time_saved_minutes, 1),
             "composite_fitness_score": round(report.composite_fitness_score, 1),
         },
     }
@@ -315,7 +320,7 @@ def get_optimizer_status():
             "filament_saved_pct": round(best_sol["report"].filament_saved_vs_standard_grid_pct, 1),
             "removal_ease": round(best_sol["report"].removal_ease_score, 1),
             "mass_grams": round(best_sol["report"].support_mass_grams, 2),
-            "time_minutes": round(best_sol["report"].estimated_support_print_time_minutes, 1),
+            "time_minutes": round(best_sol["report"].print_time_minutes, 1),
         }
     return status
 

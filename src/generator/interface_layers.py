@@ -1,7 +1,5 @@
 """
-Contact Interface Layer Generator.
-Designs optimal interface contact tips, breakaway air gaps, and detachment patterns.
-Guarantees minimal surface blemish and effortless post-print cleanup.
+Support interface layer generator for breakaway contact tips and detachment gaps.
 """
 
 from dataclasses import dataclass

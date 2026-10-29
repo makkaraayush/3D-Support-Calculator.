@@ -257,15 +257,26 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('barBedAdhesion').style.width = `${Math.min(100, rep.bed_adhesion_safety_factor * 8)}%`;
 
     // Benchmark Table
+    const formatTime = (mins) => {
+      const m = Math.round(mins || 0);
+      if (m < 60) return `${m}m`;
+      const h = Math.floor(m / 60);
+      const rem = m % 60;
+      return `${h}h ${rem}m`;
+    };
+
     const aiMass = rep.support_mass_grams;
-    const gridMass = (aiMass / (1.0 - (rep.filament_saved_vs_grid_pct / 100.0))).toFixed(1);
-    const treeMass = (aiMass / (1.0 - (rep.filament_saved_vs_tree_pct / 100.0))).toFixed(1);
+    const gridMass = rep.grid_mass_grams ? rep.grid_mass_grams.toFixed(1) : (aiMass / Math.max(0.1, (1.0 - (rep.filament_saved_vs_grid_pct / 100.0)))).toFixed(1);
+    const treeMass = rep.tree_mass_grams ? rep.tree_mass_grams.toFixed(1) : (aiMass / Math.max(0.1, (1.0 - (rep.filament_saved_vs_tree_pct / 100.0)))).toFixed(1);
 
     document.getElementById('cmpGridFilament').textContent = `${gridMass} g`;
-    document.getElementById('cmpTreeFilament').textContent = `${treeMass} g`;
-    document.getElementById('cmpAIFilament').textContent = `${aiMass.toFixed(1)} g (-${rep.filament_saved_vs_grid_pct}%)`;
+    document.getElementById('cmpGridTime').textContent = formatTime(rep.grid_print_time_minutes || (rep.print_time_minutes * 1.5));
 
-    document.getElementById('cmpAITime').textContent = `${Math.round(rep.print_time_minutes)}m`;
+    document.getElementById('cmpTreeFilament').textContent = `${treeMass} g`;
+    document.getElementById('cmpTreeTime').textContent = formatTime(rep.standard_tree_print_time_minutes || (rep.print_time_minutes * 1.2));
+
+    document.getElementById('cmpAIFilament').textContent = `${aiMass.toFixed(1)} g (-${rep.filament_saved_vs_grid_pct}%)`;
+    document.getElementById('cmpAITime').textContent = formatTime(rep.print_time_minutes);
   }
 
   // 5. Continuous Self-Learning Engine SSE Stream

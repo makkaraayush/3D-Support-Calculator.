@@ -1,8 +1,6 @@
 """
-Continuous Self-Learning Engine.
-Runs a background learning loop that tirelessly explores support topologies,
-gathers physics feedback, updates experience replay, and online-retrains the neural surrogate.
-Persists learned knowledge across sessions so the model becomes progressively smarter over time.
+Continuous background learning loop for support topology exploration,
+physics evaluation recording, and surrogate model fine-tuning.
 """
 
 import json

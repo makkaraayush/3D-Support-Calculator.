@@ -1,8 +1,5 @@
 """
-Hierarchical Tree Support Graph representation.
-Encapsulates contact tips, branching nodes, trunks, and bed anchors.
-Supports topological convergence (merging nearby branches into unified trunks)
-to drastically reduce filament consumption and print time.
+Hierarchical graph representation for tree support columns, branches, and tips.
 """
 
 from dataclasses import dataclass, field

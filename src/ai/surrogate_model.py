@@ -1,8 +1,6 @@
 """
-Ultra-lightweight Neural Surrogate Model implemented in pure NumPy.
-Trained online to predict multi-physics support metrics from geometric features
-and support hyperparameters. Runs with sub-millisecond latency on low-end CPUs
-like the Intel Core i5-2400s and Quadro K2200 with zero heavy C++ dependencies.
+Neural surrogate model for predicting multi-physics support metrics
+from geometric features and routing hyperparameters.
 """
 
 import os
