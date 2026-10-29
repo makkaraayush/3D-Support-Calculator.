@@ -1,7 +1,7 @@
 """
 High-performance 3D Triangle Mesh data structure implemented in pure NumPy.
 Provides vectorized face normal computation, bounding box, surface area,
-volume calculation via divergence theorem, and spatial point sampling.
+volume calculation via divergence theorem, and normal orientation verification.
 Zero heavy external C++ dependencies: runs instantly on low-end CPUs (e.g. i5-2400s).
 """
 
@@ -23,6 +23,9 @@ class TriangleMesh:
         else:
             self.face_normals = self._compute_face_normals()
 
+        # Ensure consistent outward normals for closed solid meshes
+        self.fix_normals()
+
     def _compute_face_normals(self) -> np.ndarray:
         if len(self.faces) == 0:
             return np.empty((0, 3), dtype=np.float32)
@@ -36,6 +39,25 @@ class TriangleMesh:
         # Avoid division by zero for degenerate triangles
         norm = np.where(norm < 1e-9, 1.0, norm)
         return (cross / norm).astype(np.float32)
+
+    def fix_normals(self) -> None:
+        """
+        Ensures consistent outward normals.
+        If signed divergence volume is negative, flips face winding so normals point outwards.
+        """
+        if len(self.faces) < 4:
+            return
+
+        v0 = self.vertices[self.faces[:, 0]]
+        v1 = self.vertices[self.faces[:, 1]]
+        v2 = self.vertices[self.faces[:, 2]]
+        cross = np.cross(v0, v1)
+        signed_volume = np.sum(np.sum(cross * v2, axis=1)) / 6.0
+
+        if signed_volume < -1e-5:
+            # Flip winding order [0, 1, 2] -> [0, 2, 1]
+            self.faces = np.column_stack([self.faces[:, 0], self.faces[:, 2], self.faces[:, 1]])
+            self.face_normals = self._compute_face_normals()
 
     @property
     def bounds(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -62,8 +84,8 @@ class TriangleMesh:
             return 0.0
         v0 = self.vertices[self.faces[:, 0]]
         v1 = self.vertices[self.faces[:, 1]]
-        v2 = self.faces[:, 2]
-        cross = np.cross(v1 - v0, self.vertices[v2] - v0)
+        v2 = self.vertices[self.faces[:, 2]]
+        cross = np.cross(v1 - v0, v2 - v0)
         areas = 0.5 * np.linalg.norm(cross, axis=1)
         return float(np.sum(areas))
 

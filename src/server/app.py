@@ -228,16 +228,26 @@ def generate_support(
     merge_distance_mm: float = Query(9.0),
     tip_diameter_mm: float = Query(0.70),
     grid_res_mm: float = Query(3.4),
+    material: Optional[str] = Query(None),
+    layer_height: Optional[float] = Query(None),
+    priority: Optional[str] = Query(None),
 ):
-    global current_mesh, current_support_mesh, current_support_graph
+    global current_mesh, current_support_mesh, current_support_graph, current_metadata
     if current_mesh is None:
         raise HTTPException(status_code=400, detail="No 3D model loaded. Please upload a model or load a benchmark.")
 
-    material = current_metadata.get("material", "PLA")
-    layer_height = current_metadata.get("layer_height", 0.20)
-    priority = current_metadata.get("priority_profile", "balanced")
+    if material:
+        current_metadata["material"] = material
+    if layer_height:
+        current_metadata["layer_height"] = layer_height
+    if priority:
+        current_metadata["priority_profile"] = priority
 
-    analyzer = OverhangAnalyzer(current_mesh, material=material, layer_height=layer_height)
+    mat = current_metadata.get("material", "PLA")
+    l_height = current_metadata.get("layer_height", 0.20)
+    prio = current_metadata.get("priority_profile", "balanced")
+
+    analyzer = OverhangAnalyzer(current_mesh, material=mat, layer_height=l_height)
     contact_points = analyzer.generate_contact_points(grid_resolution_mm=grid_res_mm)
 
     router = BranchRouter(

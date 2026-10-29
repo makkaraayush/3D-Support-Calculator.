@@ -65,6 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Presets
       const resPresets = await fetch('/api/presets');
       const presets = await resPresets.json();
+      window.lastPresets = presets;
       updatePhysicsCallout(presets);
 
       // Benchmarks
@@ -187,11 +188,24 @@ document.addEventListener('DOMContentLoaded', () => {
   sliderTipDia.addEventListener('input', (e) => valTipDia.textContent = `${parseFloat(e.target.value).toFixed(2)} mm`);
   sliderGridRes.addEventListener('input', (e) => valGridRes.textContent = `${parseFloat(e.target.value).toFixed(1)} mm`);
 
+  materialSelect.addEventListener('change', () => {
+    updatePhysicsCallout(window.lastPresets);
+    triggerSupportGeneration();
+  });
+  layerHeightSelect.addEventListener('change', () => {
+    updatePhysicsCallout(window.lastPresets);
+    triggerSupportGeneration();
+  });
+  prioritySelect.addEventListener('change', () => {
+    triggerSupportGeneration();
+  });
+
   resetParamsBtn.addEventListener('click', () => {
     sliderBranchAngle.value = 28; valBranchAngle.textContent = '28°';
     sliderMergeDist.value = 9.0; valMergeDist.textContent = '9.0 mm';
     sliderTipDia.value = 0.70; valTipDia.textContent = '0.70 mm';
     sliderGridRes.value = 3.4; valGridRes.textContent = '3.4 mm';
+    triggerSupportGeneration();
   });
 
   generateSupportBtn.addEventListener('click', () => triggerSupportGeneration());
@@ -203,6 +217,9 @@ document.addEventListener('DOMContentLoaded', () => {
       merge_distance_mm: sliderMergeDist.value,
       tip_diameter_mm: sliderTipDia.value,
       grid_res_mm: sliderGridRes.value,
+      material: materialSelect.value,
+      layer_height: layerHeightSelect.value,
+      priority: prioritySelect.value,
     });
 
     try {
@@ -212,7 +229,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       updatePhysicsReport(data.report);
       await refresh3DGeometry();
-      lblActivityTicker.textContent = `Generated ${data.tips_count} tips, ${data.roots_count} trunks. Saved ${data.report.filament_saved_vs_grid_pct}% filament!`;
+
+      if (data.tips_count === 0) {
+        lblActivityTicker.textContent = 'Model is 100% self-supporting. No supports needed!';
+      } else {
+        lblActivityTicker.textContent = `Generated ${data.tips_count} elevated support tips. Saved ${data.report.filament_saved_vs_grid_pct}% filament!`;
+      }
     } catch (err) {
       console.error(err);
       lblActivityTicker.textContent = 'Generation error';

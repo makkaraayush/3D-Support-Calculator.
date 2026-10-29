@@ -1,10 +1,9 @@
 """
 Translates abstract TreeSupportGraph structures into solid 3D TriangleMesh geometry.
-Constructs lightweight, manifold frustum segments, conical tips, and bed adhesion discs
+Constructs lightweight, manifold frustum segments, contact tip interfaces, and bed adhesion discs
 ready for Three.js 3D web preview and STL / Bambu 3MF file export.
 """
 
-import math
 from typing import List, Tuple
 import numpy as np
 from ..geometry.mesh import TriangleMesh
@@ -24,8 +23,8 @@ class SupportMeshBuilder:
         all_faces: List[List[int]] = []
         current_v_offset = 0
 
-        # Build cylindrical/frustum segments for each connected edge
         for node in graph.nodes.values():
+            # Connect branch edge to parent
             if node.parent_id is not None and node.parent_id in graph.nodes:
                 p_node = graph.nodes[node.parent_id]
                 verts, faces = self._create_frustum(
@@ -34,24 +33,27 @@ class SupportMeshBuilder:
                     r1=max(0.3, node.radius),
                     r2=max(0.3, p_node.radius),
                 )
-                all_vertices.append(verts)
-                all_faces.append(faces + current_v_offset)
-                current_v_offset += len(verts)
+                if len(verts) > 0:
+                    all_vertices.append(verts)
+                    all_faces.append(faces + current_v_offset)
+                    current_v_offset += len(verts)
 
-            # Build bed adhesion disc if root
-            if node.is_bed_contact or node.node_type == "root":
-                flange_r = max(2.5, node.radius * 2.2)
-                verts, faces = self._create_bed_disc(node.position, radius=flange_r, height=0.6)
-                all_vertices.append(verts)
-                all_faces.append(faces + current_v_offset)
-                current_v_offset += len(verts)
+            # Build bed adhesion disc ONLY if touching bed Z=0
+            if (node.is_bed_contact or node.node_type == "root") and node.position[2] <= 0.2:
+                flange_r = max(2.8, node.radius * 2.0)
+                verts, faces = self._create_bed_disc(node.position, radius=flange_r, height=0.4)
+                if len(verts) > 0:
+                    all_vertices.append(verts)
+                    all_faces.append(faces + current_v_offset)
+                    current_v_offset += len(verts)
 
-            # Build sharp conical tip if tip node
+            # Cap tip nodes with closed circular cap at exact interface position
             if node.node_type == "tip":
-                verts, faces = self._create_tip_cone(node.position, base_radius=node.radius, tip_height=1.2)
-                all_vertices.append(verts)
-                all_faces.append(faces + current_v_offset)
-                current_v_offset += len(verts)
+                verts, faces = self._create_tip_cap(node.position, radius=node.radius)
+                if len(verts) > 0:
+                    all_vertices.append(verts)
+                    all_faces.append(faces + current_v_offset)
+                    current_v_offset += len(verts)
 
         if not all_vertices:
             return TriangleMesh(np.empty((0, 3), dtype=np.float32), np.empty((0, 3), dtype=np.int32))
@@ -72,7 +74,7 @@ class SupportMeshBuilder:
 
         z_axis = axis / length
 
-        # Find orthogonal vectors in XY plane
+        # Find orthogonal vectors
         if abs(z_axis[0]) < 0.9 and abs(z_axis[1]) < 0.9:
             arbitrary = np.array([0.0, 0.0, 1.0], dtype=np.float32)
         else:
@@ -86,36 +88,35 @@ class SupportMeshBuilder:
         cos_t = np.cos(thetas)
         sin_t = np.sin(thetas)
 
-        # Bottom circle at p1
-        bottom_circle = (
+        # Top circle at p1
+        top_circle = (
             p1[None, :]
             + (cos_t[:, None] * x_axis[None, :] * r1)
             + (sin_t[:, None] * y_axis[None, :] * r1)
         )
-        # Top circle at p2
-        top_circle = (
+        # Bottom circle at p2
+        bottom_circle = (
             p2[None, :]
             + (cos_t[:, None] * x_axis[None, :] * r2)
             + (sin_t[:, None] * y_axis[None, :] * r2)
         )
 
-        verts = np.vstack([bottom_circle, top_circle]).astype(np.float32)
+        verts = np.vstack([top_circle, bottom_circle]).astype(np.float32)
         faces: List[List[int]] = []
         n = self.radial_segments
 
-        # Side quads (as 2 triangles each)
         for i in range(n):
             next_i = (i + 1) % n
-            b1 = i
-            b2 = next_i
-            t1 = i + n
-            t2 = next_i + n
-            faces.append([b1, t1, b2])
-            faces.append([b2, t1, t2])
+            t1 = i
+            t2 = next_i
+            b1 = i + n
+            b2 = next_i + n
+            faces.append([t1, b1, t2])
+            faces.append([t2, b1, b2])
 
         return verts, np.array(faces, dtype=np.int32)
 
-    def _create_bed_disc(self, center: np.ndarray, radius: float, height: float = 0.6) -> Tuple[np.ndarray, np.ndarray]:
+    def _create_bed_disc(self, center: np.ndarray, radius: float, height: float = 0.4) -> Tuple[np.ndarray, np.ndarray]:
         """Creates a flat cylindrical adhesion brim disc on build plate Z=0."""
         thetas = np.linspace(0, 2 * np.pi, self.radial_segments, endpoint=False)
         x = radius * np.cos(thetas)
@@ -127,22 +128,15 @@ class SupportMeshBuilder:
         verts_bot = np.column_stack([center[0] + x, center[1] + y, np.zeros_like(x)])
         verts_top = np.column_stack([center[0] + x, center[1] + y, np.full_like(x, height)])
 
-        # Center vertices for fan triangulation
         verts = np.vstack([c_base, verts_bot, c_top, verts_top]).astype(np.float32)
         faces: List[List[int]] = []
         n = self.radial_segments
-
-        # Bottom center is index 0; verts_bot indices 1..n
-        # Top center is index n+1; verts_top indices n+2..2n+1
         top_c_idx = n + 1
 
         for i in range(n):
             next_i = (i + 1) % n
-            # Bottom fan
             faces.append([0, 1 + next_i, 1 + i])
-            # Top fan
             faces.append([top_c_idx, top_c_idx + 1 + i, top_c_idx + 1 + next_i])
-            # Side quads
             b1 = 1 + i
             b2 = 1 + next_i
             t1 = top_c_idx + 1 + i
@@ -152,21 +146,21 @@ class SupportMeshBuilder:
 
         return verts, np.array(faces, dtype=np.int32)
 
-    def _create_tip_cone(self, base_pos: np.ndarray, base_radius: float, tip_height: float = 1.2) -> Tuple[np.ndarray, np.ndarray]:
-        """Creates a conical tip pointing upwards toward model contact point."""
+    def _create_tip_cap(self, tip_pos: np.ndarray, radius: float) -> Tuple[np.ndarray, np.ndarray]:
+        """Creates a smooth dome cap at the tip position."""
         thetas = np.linspace(0, 2 * np.pi, self.radial_segments, endpoint=False)
-        x = base_radius * np.cos(thetas)
-        y = base_radius * np.sin(thetas)
+        x = radius * np.cos(thetas)
+        y = radius * np.sin(thetas)
 
-        tip_point = base_pos + np.array([0.0, 0.0, tip_height], dtype=np.float32)
-        ring_verts = np.column_stack([base_pos[0] + x, base_pos[1] + y, np.full_like(x, base_pos[2])])
+        center_v = tip_pos.copy()
+        ring_verts = np.column_stack([tip_pos[0] + x, tip_pos[1] + y, np.full_like(x, tip_pos[2])])
 
-        verts = np.vstack([tip_point, ring_verts]).astype(np.float32)
+        verts = np.vstack([center_v, ring_verts]).astype(np.float32)
         faces: List[List[int]] = []
         n = self.radial_segments
 
         for i in range(n):
             next_i = (i + 1) % n
-            faces.append([0, 1 + i, 1 + next_i])
+            faces.append([0, 1 + next_i, 1 + i])
 
         return verts, np.array(faces, dtype=np.int32)

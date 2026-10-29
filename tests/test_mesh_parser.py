@@ -97,17 +97,21 @@ class TestMeshParsers(unittest.TestCase):
         self.assertEqual(metadata["layer_height"], 0.20)
 
     def test_overhang_analysis(self):
-        # A cube sitting flat has:
-        # 2 bottom faces pointing straight down (overhang angle = 90 deg)
-        # 8 vertical side faces (overhang angle = 0 deg)
-        # 2 top faces pointing straight up (overhang angle = 0 deg)
-        analyzer = OverhangAnalyzer(self.cube, critical_angle_deg=50.0)
-        report = analyzer.analyze()
-        self.assertEqual(report["total_faces"], 12)
-        self.assertEqual(report["critical_face_count"], 2)  # the 2 bottom faces
+        # A cube sitting on the bed at Z=0 is supported by the print bed itself (0 critical overhangs)
+        analyzer_cube = OverhangAnalyzer(self.cube.center_on_bed(), critical_angle_deg=50.0)
+        report_cube = analyzer_cube.analyze()
+        self.assertEqual(report_cube["critical_face_count"], 0)
+        self.assertEqual(len(analyzer_cube.generate_contact_points()), 0)
 
-        contact_points = analyzer.generate_contact_points(grid_resolution_mm=5.0)
-        self.assertGreaterEqual(len(contact_points), 1)
+        # A model with a base at Z=0 and an elevated overhang wing at Z=15
+        from src.geometry.generate_benchmarks import create_box, merge_boxes
+        box_base = create_box(-5, 5, -5, 5, 0, 20)
+        box_wing = create_box(5, 20, -5, 5, 15, 20)
+        cantilever_mesh = merge_boxes([box_base, box_wing])
+        analyzer_cant = OverhangAnalyzer(cantilever_mesh, critical_angle_deg=50.0)
+        report_cant = analyzer_cant.analyze()
+        self.assertGreater(report_cant["critical_face_count"], 0)
+        self.assertGreaterEqual(len(analyzer_cant.generate_contact_points()), 1)
 
 
 if __name__ == "__main__":

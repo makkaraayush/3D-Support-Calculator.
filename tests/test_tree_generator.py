@@ -29,8 +29,8 @@ def create_t_shape_mesh() -> TriangleMesh:
         # Stem base
         [0, 2, 1], [0, 3, 2],
         # Overhang wings under surface (Z=20, facing down)
-        [8, 4, 9], [9, 4, 7],
-        [5, 10, 6], [6, 10, 11],
+        [8, 9, 4], [9, 7, 4],
+        [5, 6, 10], [6, 11, 10],
         # Top cap
         [12, 14, 13], [13, 14, 15],
     ], dtype=np.int32)

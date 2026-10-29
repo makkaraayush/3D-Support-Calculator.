@@ -1,7 +1,7 @@
 """
 Collision-aware 3D Branch Routing for Tree Supports.
-Routes branches from overhang contact tips downward to the print bed (Z=0).
-Converges nearby branches to minimize material volume while avoiding model wall penetrations.
+Routes branches from elevated overhang contact tips downward to the print bed (Z=0).
+Converges nearby branches organically to minimize material volume while avoiding model wall penetrations.
 """
 
 from typing import List, Tuple, Dict, Any, Optional
@@ -32,15 +32,16 @@ class BranchRouter:
         self.model_clearance_mm = model_clearance_mm
         self.z_gap_mm = lookup_optimal_z_gap(material, layer_height)
 
-        # Precompute mesh bounding box and vertex bounds for fast collision rejection
+        # Precompute mesh bounds
         self.mesh_min, self.mesh_max = self.mesh.bounds
+        self.mesh_center = self.mesh.center
 
     def check_point_clearance(self, point: np.ndarray, clearance_mm: float) -> bool:
         """
-        Fast check to verify a support branch node doesn't collide with the model.
+        Verifies that a support branch node doesn't collide with model geometry.
         Returns True if the point is safely outside the model with specified clearance.
         """
-        # If point is completely outside model bounding box + clearance, it is safely clear
+        # Fast AABB check with clearance margin
         if (
             point[0] < self.mesh_min[0] - clearance_mm
             or point[0] > self.mesh_max[0] + clearance_mm
@@ -51,15 +52,13 @@ class BranchRouter:
         ):
             return True
 
-        # For points within model AABB, check distance to nearest mesh vertices
-        # Subsampling for fast low-CPU calculation
-        if len(self.mesh.vertices) > 2000:
-            sample_indices = np.linspace(0, len(self.mesh.vertices) - 1, 1500, dtype=np.int32)
-            sampled_verts = self.mesh.vertices[sample_indices]
-        else:
-            sampled_verts = self.mesh.vertices
+        # Check distance against model vertices near this Z slice
+        z_slice_mask = np.abs(self.mesh.vertices[:, 2] - point[2]) <= (clearance_mm * 2.0)
+        if not np.any(z_slice_mask):
+            return True
 
-        dists_sq = np.sum((sampled_verts - point) ** 2, axis=1)
+        slice_verts = self.mesh.vertices[z_slice_mask]
+        dists_sq = np.sum((slice_verts - point) ** 2, axis=1)
         min_dist = np.sqrt(np.min(dists_sq))
         return min_dist >= clearance_mm
 
@@ -71,11 +70,18 @@ class BranchRouter:
         if not contact_points:
             return graph
 
+        # Filter out any accidental bed contact points (Z <= 0.8)
+        valid_contact_points = [
+            cp for cp in contact_points if cp.position[2] > (self.mesh_min[2] + 0.8)
+        ]
+        if not valid_contact_points:
+            return graph
+
         # 1. Create tip nodes offset by Z-air gap
-        active_branch_heads: List[Tuple[TreeNode, np.ndarray]] = []
-        for cp in contact_points:
-            # Tip position placed slightly below overhang contact point by z_gap
+        active_branch_heads: List[TreeNode] = []
+        for cp in valid_contact_points:
             tip_pos = cp.position.copy()
+            # Position tip exactly at interface layer
             tip_pos[2] = max(0.2, tip_pos[2] - self.z_gap_mm)
 
             tip_radius = self.tip_diameter_mm * 0.5
@@ -85,20 +91,17 @@ class BranchRouter:
                 node_type="tip",
                 parent_id=None,
             )
-            # Store (current_node, direction_vector)
-            # Initial growth vector points slightly downwards and away from surface normal
-            descent_dir = np.array([0.0, 0.0, -1.0], dtype=np.float32)
-            active_branch_heads.append((tip_node, descent_dir))
+            active_branch_heads.append(tip_node)
 
-        # 2. Descend layer by layer towards bed (Z = 0)
-        step_z = 3.5  # 3.5mm vertical step per segment
+        # 2. Descend layer by layer towards build plate (Z = 0)
+        step_z = 3.0  # 3.0 mm vertical descent per segment
         current_heads = active_branch_heads
 
         while current_heads:
-            next_heads: List[Tuple[TreeNode, np.ndarray]] = []
+            next_heads: List[TreeNode] = []
 
-            # Check if any heads are close enough to merge
-            merged_clusters: List[List[Tuple[TreeNode, np.ndarray]]] = []
+            # Group heads into merge clusters
+            clusters: List[List[TreeNode]] = []
             used_indices = set()
 
             for i in range(len(current_heads)):
@@ -107,67 +110,61 @@ class BranchRouter:
                 cluster = [current_heads[i]]
                 used_indices.add(i)
 
+                p1 = current_heads[i].position
                 for j in range(i + 1, len(current_heads)):
                     if j in used_indices:
                         continue
-                    p1 = current_heads[i][0].position
-                    p2 = current_heads[j][0].position
-                    # If within merge distance in XY and close in Z
+                    p2 = current_heads[j].position
                     xy_dist = np.linalg.norm(p1[:2] - p2[:2])
                     z_dist = abs(p1[2] - p2[2])
                     if xy_dist <= self.merge_distance_mm and z_dist <= step_z * 1.5:
                         cluster.append(current_heads[j])
                         used_indices.add(j)
 
-                merged_clusters.append(cluster)
+                clusters.append(cluster)
 
             # Process each cluster
-            for cluster in merged_clusters:
-                avg_pos = np.mean([h[0].position for h in cluster], axis=0)
+            for cluster in clusters:
+                avg_pos = np.mean([h.position for h in cluster], axis=0)
                 new_z = max(0.0, avg_pos[2] - step_z)
 
-                # Determine radius based on taper rules and load
                 taper_info = get_recommended_branch_taper(
                     total_height_mm=float(avg_pos[2]),
                     material=self.material,
                     target_tip_diameter_mm=self.tip_diameter_mm,
                 )
-                branch_radius = (taper_info["mid_diameter_mm"] * 0.5) * (1.0 + 0.15 * (len(cluster) - 1))
-                branch_radius = min(3.5, branch_radius)
+                branch_radius = (taper_info["mid_diameter_mm"] * 0.5) * (1.0 + 0.12 * (len(cluster) - 1))
+                branch_radius = min(4.0, max(1.2, branch_radius))
 
                 new_pos = np.array([avg_pos[0], avg_pos[1], new_z], dtype=np.float32)
 
-                # Check clearance; if colliding, try nudging away from model center
+                # Collision clearance check and avoidance
                 if not self.check_point_clearance(new_pos, self.model_clearance_mm):
-                    # Nudge vector outward from model center
-                    model_center = self.mesh.center
-                    outward_vec = new_pos[:2] - model_center[:2]
+                    outward_vec = new_pos[:2] - self.mesh_center[:2]
                     norm_out = np.linalg.norm(outward_vec)
                     if norm_out > 1e-4:
                         outward_dir = outward_vec / norm_out
-                        new_pos[:2] += outward_dir * (self.model_clearance_mm * 1.5)
+                        new_pos[:2] += outward_dir * (self.model_clearance_mm * 1.8)
 
-                is_at_bed = new_z <= 0.2
+                is_at_bed = new_z <= 0.4
                 if is_at_bed:
                     new_pos[2] = 0.0
 
-                # Create branch or root node
                 node_type = "root" if is_at_bed else ("trunk" if len(cluster) > 1 else "branch")
                 new_node = graph.add_node(
                     position=new_pos,
-                    radius=branch_radius if not is_at_bed else max(2.5, branch_radius * 1.3),
+                    radius=branch_radius if not is_at_bed else max(2.8, branch_radius * 1.4),
                     node_type=node_type,
                     is_bed_contact=is_at_bed,
                 )
 
-                # Link all clustered parents to this new node
-                for parent_head in cluster:
-                    p_node = parent_head[0]
-                    p_node.parent_id = new_node.id
-                    new_node.children_ids.append(p_node.id)
+                # Connect clustered parents to this descending node
+                for parent_node in cluster:
+                    parent_node.parent_id = new_node.id
+                    new_node.children_ids.append(parent_node.id)
 
                 if not is_at_bed:
-                    next_heads.append((new_node, np.array([0.0, 0.0, -1.0], dtype=np.float32)))
+                    next_heads.append(new_node)
 
             current_heads = next_heads
 
